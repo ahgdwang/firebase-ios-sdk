@@ -111,6 +111,8 @@ NSString *const FIRCLSGoogleTransportMappingID = @"1206";
 // Dependencies common to each of the Controllers
 @property(nonatomic, strong) FIRCLSManagerData *managerData;
 
+@property(nonatomic, nullable) FBLPromise *contextInitPromise;
+
 @end
 
 @implementation FIRCrashlytics
@@ -197,14 +199,15 @@ NSString *const FIRCLSGoogleTransportMappingID = @"1206";
       });
     }
 
-    [[[_reportManager startWithProfiling] then:^id _Nullable(NSNumber *_Nullable value) {
-      if (![value boolValue]) {
-        FIRCLSErrorLog(@"Crash reporting could not be initialized");
-      }
-      return value;
-    }] catch:^void(NSError *error) {
-      FIRCLSErrorLog(@"Crash reporting failed to initialize with error: %@", error);
-    }];
+    _contextInitPromise =
+        [[[_reportManager startWithProfiling] then:^id _Nullable(NSNumber *_Nullable value) {
+          if (![value boolValue]) {
+            FIRCLSErrorLog(@"Crash reporting could not be initialized");
+          }
+          return value;
+        }] catch:^void(NSError *error) {
+          FIRCLSErrorLog(@"Crash reporting failed to initialize with error: %@", error);
+        }];
 
     // RemoteConfig subscription should be made after session report directory created.
     if (remoteConfig) {
@@ -307,7 +310,14 @@ NSString *const FIRCLSGoogleTransportMappingID = @"1206";
 
 #pragma mark - API: Logging
 - (void)log:(NSString *)msg {
-  FIRCLSLog(@"%@", msg);
+  if (!_contextInitPromise) {
+    FIRCLSErrorLog(@"Context has not been inialized when log message: %@", msg);
+    return;
+  }
+  [_contextInitPromise then:^id _Nullable(id _Nullable value) {
+    FIRCLSLog(@"%@", msg);
+    return nil;
+  }];
 }
 
 - (void)logWithFormat:(NSString *)format, ... {
@@ -350,17 +360,41 @@ NSString *const FIRCLSGoogleTransportMappingID = @"1206";
 
 #pragma mark - API: setUserID
 - (void)setUserID:(nullable NSString *)userID {
-  FIRCLSUserLoggingRecordInternalKeyValue(FIRCLSUserIdentifierKey, userID);
+  if (!_contextInitPromise) {
+    FIRCLSWarningLog(@"FIRCLSContext has not been inialized when set user id: %@", userID);
+    return;
+  }
+
+  [_contextInitPromise then:^id _Nullable(id _Nullable value) {
+    FIRCLSUserLoggingRecordInternalKeyValue(FIRCLSUserIdentifierKey, userID);
+    return nil;
+  }];
 }
 
 #pragma mark - API: setCustomValue
 
 - (void)setCustomValue:(nullable id)value forKey:(NSString *)key {
-  FIRCLSUserLoggingRecordUserKeyValue(key, value);
+  if (!_contextInitPromise) {
+    FIRCLSWarningLog(@"FIRCLSContext has not been inialized when set key: %@, value: %@", key,
+                     value);
+    return;
+  }
+  [_contextInitPromise then:^id _Nullable(id _Nullable value) {
+    FIRCLSUserLoggingRecordUserKeyValue(key, value);
+    return nil;
+  }];
 }
 
 - (void)setCustomKeysAndValues:(NSDictionary *)keysAndValues {
-  FIRCLSUserLoggingRecordUserKeysAndValues(keysAndValues);
+  if (!_contextInitPromise) {
+    FIRCLSWarningLog(@"FIRCLSContext has not been inialized when set keys and values: %@",
+                     keysAndValues);
+    return;
+  }
+  [_contextInitPromise then:^id _Nullable(id _Nullable value) {
+    FIRCLSUserLoggingRecordUserKeysAndValues(keysAndValues);
+    return nil;
+  }];
 }
 
 #pragma mark - API: Development Platform
@@ -383,8 +417,16 @@ NSString *const FIRCLSGoogleTransportMappingID = @"1206";
 }
 
 - (void)setDevelopmentPlatformName:(NSString *)developmentPlatformName {
-  FIRCLSUserLoggingRecordInternalKeyValue(FIRCLSDevelopmentPlatformNameKey,
-                                          developmentPlatformName);
+  if (!_contextInitPromise) {
+    FIRCLSWarningLog(@"FIRCLSContext has not been inialized when set platform name: %@",
+                     developmentPlatformName);
+    return;
+  }
+  [_contextInitPromise then:^id _Nullable(id _Nullable value) {
+    FIRCLSUserLoggingRecordInternalKeyValue(FIRCLSDevelopmentPlatformNameKey,
+                                            developmentPlatformName);
+    return nil;
+  }];
 }
 
 - (NSString *)developmentPlatformVersion {
@@ -393,8 +435,16 @@ NSString *const FIRCLSGoogleTransportMappingID = @"1206";
 }
 
 - (void)setDevelopmentPlatformVersion:(NSString *)developmentPlatformVersion {
-  FIRCLSUserLoggingRecordInternalKeyValue(FIRCLSDevelopmentPlatformVersionKey,
-                                          developmentPlatformVersion);
+  if (!_contextInitPromise) {
+    FIRCLSWarningLog(@"FIRCLSContext has not been inialized when set platform version: %@",
+                     developmentPlatformVersion);
+    return;
+  }
+  [_contextInitPromise then:^id _Nullable(id _Nullable value) {
+    FIRCLSUserLoggingRecordInternalKeyValue(FIRCLSDevelopmentPlatformVersionKey,
+                                            developmentPlatformVersion);
+    return nil;
+  }];
 }
 
 #pragma mark - API: Errors and Exceptions
