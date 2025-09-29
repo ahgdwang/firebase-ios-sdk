@@ -187,3 +187,136 @@
     }
   }
 #endif
+
+#if os(macOS)
+
+import Foundation
+import WebKit
+import AppKit
+
+/// A Class responsible for presenting URL via WKWebView in macOS apps.
+@available(macOS 10.15, *)
+class AuthURLPresenter: NSObject, WKNavigationDelegate {
+    /// Presents an URL to interact with user.
+    /// - Parameter url: The URL to present.
+    /// - Parameter completion: A block to be called either synchronously if the presentation fails
+    /// to start, or asynchronously in future on an unspecified thread once the presentation
+    /// finishes.
+    func present(_ url: URL,
+                 callbackMatcher: @escaping (URL?) -> Bool,
+                 completion: @escaping (URL?, Error?) -> Void) {
+        if isPresenting {
+            // Unable to start a new presentation on top of another.
+            DispatchQueue.main.async {
+                completion(nil, AuthErrorUtils.webContextCancelledError(message: nil))
+            }
+            return
+        }
+        
+        isPresenting = true
+        self.callbackMatcher = callbackMatcher
+        self.completion = completion
+        
+        DispatchQueue.main.async {
+            // Create web view
+            let webView = WKWebView()
+            webView.navigationDelegate = self
+            
+            // Create window and view controller
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Authentication"
+            window.contentView = webView
+            
+            // Create window controller
+            let windowController = NSWindowController(window: window)
+            self.windowController = windowController
+            
+            // Load the URL
+            webView.load(URLRequest(url: url))
+            
+            // Present the window
+            windowController.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+    
+    /// Determines if a URL was produced by the currently presented URL.
+    /// - Parameter url: The URL to handle.
+    /// - Returns: Whether the URL could be handled or not.
+    func canHandle(url: URL) -> Bool {
+        if isPresenting,
+           let callbackMatcher = callbackMatcher,
+           callbackMatcher(url) {
+            finishPresentation(withURL: url, error: nil)
+            return true
+        }
+        return false
+    }
+    
+    // MARK: - WKNavigationDelegate
+    
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url, canHandle(url: url) {
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+    
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        kAuthGlobalWorkQueue.async {
+            self.finishPresentation(withURL: nil, error: error)
+        }
+    }
+    
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        kAuthGlobalWorkQueue.async {
+            self.finishPresentation(withURL: nil, error: error)
+        }
+    }
+    
+    // MARK: - Private
+    
+    /// Whether or not some web-based content is being presented.
+    private var isPresenting: Bool = false
+    
+    /// The callback URL matcher for the current presentation, if one is active.
+    private var callbackMatcher: ((URL) -> Bool)?
+    
+    /// The window controller used for the current presentation, if any.
+    private var windowController: NSWindowController?
+    
+    /// The completion handler for the current presentation, if one is active.
+    var completion: ((URL?, Error?) -> Void)?
+    
+    
+    private func finishPresentation(withURL url: URL?, error: Error?) {
+        callbackMatcher = nil
+        let completion = self.completion
+        self.completion = nil
+        let windowController = self.windowController
+        self.windowController = nil
+        
+        if windowController != nil {
+            DispatchQueue.main.async {
+                windowController?.close()
+                self.isPresenting = false
+                if let completion {
+                    completion(url, error)
+                }
+            }
+        } else {
+            isPresenting = false
+            if let completion {
+                completion(url, error)
+            }
+        }
+    }
+}
+
+#endif

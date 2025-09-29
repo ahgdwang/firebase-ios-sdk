@@ -1664,6 +1664,11 @@ extension Auth: AuthInterop {
       GULAppDelegateSwizzler.proxyOriginalDelegateIncludingAPNSMethods()
       GULSceneDelegateSwizzler.proxyOriginalSceneDelegate()
     #endif
+      
+    #if os(macOS)
+      authURLPresenter = AuthURLPresenter()
+      settings = AuthSettings()
+    #endif
     requestConfiguration = AuthRequestConfiguration(apiKey: apiKey,
                                                     appID: app.options.googleAppID,
                                                     auth: nil,
@@ -2370,7 +2375,9 @@ extension Auth: AuthInterop {
     var authURLPresenter: AuthWebViewControllerDelegate
 
   #endif // TARGET_OS_IOS
-
+#if os(macOS)
+    var authURLPresenter: AuthURLPresenter
+#endif
   // MARK: Private properties
 
   /// The stored user manager.
